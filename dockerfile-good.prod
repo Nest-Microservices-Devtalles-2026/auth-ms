@@ -5,13 +5,11 @@
 # Esto crea una maquina virtual donde solo estan todos los modulos de node
 FROM node:22.22-alpine3.22 AS deps
 
-# Parche del SO que elimina los CVEs en la imagen final
-RUN apk update && apk upgrade --no-cache
-
 WORKDIR /usr/src/app
 
 COPY package.json ./
 COPY package-lock.json ./
+
 
 RUN npm install
 
@@ -19,10 +17,18 @@ RUN npm install
 
 FROM node:22.22-alpine3.22 AS build
 
-# Parche del SO que elimina los CVEs en la imagen final
-RUN apk update && apk upgrade --no-cache
-
 WORKDIR /usr/src/app
+
+ARG PORT
+ARG NATS_SERVERS
+ARG DATABASE_URL
+ARG JWT_SECRET
+
+ENV PORT=${PORT}
+ENV NATS_SERVERS=${NATS_SERVERS}
+ENV DATABASE_URL=${DATABASE_URL}
+ENV JWT_SECRET=${JWT_SECRET}
+
 
 # Copiar de deps, los modulos de node
 # COPY --from=stage origin dest
@@ -30,27 +36,35 @@ WORKDIR /usr/src/app
 
 COPY --from=deps /usr/src/app/node_modules ./node_modules
 
-# Copiamos todo el codigo fuente (QUE SERIA TODO LO QUE NO ESTE INCLUIDO EN EL DOCKER IGNORE)
-# IMPORTANTE se copian las diferencias por ejemplo si el readme cambia
-# entonces se copia esa diferencia
+# Copiamos todo el codigo fuente
 COPY . .
+
+# RUN npm run test --> este es el lugar para ejecutar los testing
+
+# esto genera la carpeta dist
+RUN npm run build
+
+# Limpieza de modulos o dependencias de node que no se necesitan
+RUN npm ci -f --only=production && npm cache clean --force
 
 # esto genera la carpeta generate
 RUN npx prisma generate
 
-# RUN npm run test --> este es el lugar para ejecutar los testing 
-RUN npm run build
+# Se comento porque habia 2 en el mismo stage
+# # Esto viene del docker-compose.prod.yml a traves de args
+ARG PORT
+ARG NATS_SERVERS
+ARG DATABASE_URL
+ARG JWT_SECRET
 
-# Limpieza de modulos o dependencias de node que no se necesitan 
-RUN npm ci -f --only=production && npm cache clean --force
+ENV PORT=${PORT}
+ENV NATS_SERVERS=${NATS_SERVERS}
+ENV DATABASE_URL=${DATABASE_URL}
+ENV JWT_SECRET=${JWT_SECRET}
 
-
-## Crear la imagen final de docker 
+## Crear la imagen final de docker
 
 FROM node:22.22-alpine3.22 AS prod
-
-# Parche del SO que elimina los CVEs en la imagen final
-RUN apk update && apk upgrade --no-cache
 
 WORKDIR /usr/src/app
 
@@ -59,8 +73,8 @@ WORKDIR /usr/src/app
 # NOTA origin es el path donde esta lo que quiero copiar
 
 COPY --from=build /usr/src/app/node_modules ./node_modules
-
 COPY --from=build /usr/src/app/dist ./dist
+
 
 # Muy comun verlo para indicar que estamos en produccion
 ENV NODE_ENV=production
@@ -68,7 +82,7 @@ ENV NODE_ENV=production
 
 # Crea un usuario llamado node y nos movemos a ese usuario es decir el va a ejecutar las lineas siguiente
 # esto se hace porque si lo dejamos con el usuario que viene en la imagen (node:22.22-alpine3.22) tiene
-# demasiado privilegio 
+# demasiado privilegio
 USER node
 
 EXPOSE 3000
