@@ -15,5 +15,6 @@ steps:
       [
         "push",
         "us-east4-docker.pkg.dev/tienda-microservices-505922/images-registry/auth-ms",
+      ]
 options:
   logging: CLOUD_LOGGING_ONLY
